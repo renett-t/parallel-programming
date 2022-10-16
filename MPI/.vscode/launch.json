@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [       
+        {
+            "name": "mpicc - build and debug active file",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/bin/mpirun",
+            "args": [
+                "-np",
+                "4",
+                "${workspaceFolder}/output/${relativeFileDirname}/${fileBasenameNoExtension}.out",
+            ],
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            "environment":[
+                { "name": "TMPDIR", "value": "/tmp" }
+            ],
+            "externalConsole": false,
+            "preLaunchTask": "mpicc build active file"
+          }
+    ]
+}

@@ -1,0 +1,36 @@
+{
+    "tasks": [
+        {
+            "type":"shell",
+            "label": "Create directory for binary file",
+            "command": "mkdir",
+            "args": [
+                "-p",
+                "${workspaceFolder}/output/${relativeFileDirname}"
+            ]
+        },
+        {
+            "type": "shell",
+            "label": "mpicc build active file",
+            "command": "/usr/bin/mpic++",
+            "args": [
+                "-g",
+                "${file}",
+                "-o",
+                "${workspaceFolder}/output/${relativeFileDirname}/${fileBasenameNoExtension}.out"
+            ],
+            "options": {
+              "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": "Create directory for binary file"
+        },
+    ],
+    "version": "2.0.0"
+}
