@@ -4,13 +4,25 @@
 #include <cmath>
 
 const int RAND_MAX_VALUE = 10;
-const int MATRIX_SIZE = 5;
+const int ROWS_A = 5;
+const int COLUMNS_A = 5;
+const int COLUMNS_B = 5;
+const int METADATA_SIZE = 2;
 
 using namespace std;
 
-void print_matrix(int matrix[MATRIX_SIZE][MATRIX_SIZE]) {
-   for (int i = 0; i < MATRIX_SIZE; i++) {
-        for (int j = 0; j < MATRIX_SIZE; j++) {
+void print_matrix_A(int matrix[ROWS_A][COLUMNS_A]) {
+   for (int i = 0; i < ROWS_A; i++) {
+        for (int j = 0; j < COLUMNS_A; j++) {
+            printf("%d ", matrix[i][j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+void print_matrix_B(int matrix[COLUMNS_A][COLUMNS_B]) {
+   for (int i = 0; i < COLUMNS_A; i++) {
+        for (int j = 0; j < COLUMNS_B; j++) {
             printf("%d ", matrix[i][j]);
         }
         printf("\n");
@@ -20,89 +32,104 @@ void print_matrix(int matrix[MATRIX_SIZE][MATRIX_SIZE]) {
 
 int main(int argc, char *argv[]) {
     int rank, size;
-    int sender = 0;
+    int tag_META = 550;
     int tag_A = 100;
     int tag_B = 300;
     int tag_C = 400;
+    
+    int a[ROWS_A][COLUMNS_A];
+    int b[COLUMNS_A][COLUMNS_B];
+    int c[ROWS_A][COLUMNS_B];
+
+    int MAIN_PROCESS = 0;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    
-    if (rank == sender) {
-        srand(time(nullptr));
-        int a[MATRIX_SIZE][MATRIX_SIZE];
-        int b[MATRIX_SIZE][MATRIX_SIZE];
 
-        for (int i = 0; i < MATRIX_SIZE; i++) {
-            for (int j = 0; j < MATRIX_SIZE; j++) {
+    if (rank == MAIN_PROCESS) {
+        srand(time(nullptr));
+        
+        for (int i = 0; i < ROWS_A; i++) {
+            for (int j = 0; j < COLUMNS_A; j++) {
                 a[i][j] = rand() % RAND_MAX_VALUE;
+            }
+        }
+        for (int i = 0; i < COLUMNS_A; i++) {
+            for (int j = 0; j < COLUMNS_B; j++) {
                 b[i][j] = rand() % RAND_MAX_VALUE;
             }
         }
         
         printf("Initialized matrixes.\nA:\n");
-        print_matrix(a);
+        print_matrix_A(a);
         printf("Matrix B:\n");
-        print_matrix(b);
-    
-        int block = MATRIX_SIZE / size + bool(MATRIX_SIZE % size != 0);
+        print_matrix_B(b);
 
-        for (int i = 0, dest = 1; i < MATRIX_SIZE; i += block, dest++) {
-            MPI_Send(&(b[0][0]), MATRIX_SIZE * MATRIX_SIZE, MPI_INT, dest, tag_B + dest, MPI_COMM_WORLD);
-            int count = block < MATRIX_SIZE - i ? block : MATRIX_SIZE - i;
-            MPI_Send(&(a[i][0]), count * MATRIX_SIZE, MPI_INT, dest, tag_A + dest, MPI_COMM_WORLD);
+        double start = MPI_Wtime();
+
+        int workers = size - 1;
+        int rows_block = ROWS_A / workers + (ROWS_A % workers != 0);
+
+        for (int dest = 1; dest < size; dest++) {
+            int startRow = (dest - 1) * rows_block;
+            int rowsCount = std::min(rows_block, ROWS_A - ((dest - 1) * rows_block));
+            int data[METADATA_SIZE] = {startRow, rowsCount};
+            
+            printf("Sending %d rows to process №%d, offset = %d\n", rowsCount, dest, startRow);
+            MPI_Send(&data, METADATA_SIZE, MPI_INT, dest, tag_META + dest, MPI_COMM_WORLD);
+            MPI_Send(&(a[startRow][0]), rowsCount * COLUMNS_A, MPI_INT, dest, tag_A + dest, MPI_COMM_WORLD);
+            MPI_Send(&b, COLUMNS_A * COLUMNS_B, MPI_INT, dest, tag_B + dest, MPI_COMM_WORLD);
         }
 
-        int c[MATRIX_SIZE][MATRIX_SIZE];
-        for (int i = 0, dest = 1; i < MATRIX_SIZE; i += block, dest++) {
-            int count = block < MATRIX_SIZE - i ? block :  - i;
-            MPI_Recv(&(c[i][0]), count * MATRIX_SIZE, MPI_INT, dest, tag_A + dest, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("Sent all data, waiting for results~ \n");
+        for (int from = 1; from < size; from++) {
+            MPI_Status statusFrom;
+            MPI_Probe(MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusFrom);
+   
+            int startRow = (statusFrom.MPI_SOURCE - 1) * rows_block;
+            int rowsCount = std::min(rows_block, ROWS_A - ((statusFrom.MPI_SOURCE - 1) * rows_block));
+            printf("  Received %d rows from process №%d, offset = %d\n", rowsCount, statusFrom.MPI_SOURCE, startRow);
+
+            MPI_Recv(&(c[startRow][0]), rowsCount * COLUMNS_B, MPI_INT, statusFrom.MPI_SOURCE, statusFrom.MPI_TAG, MPI_COMM_WORLD, &statusFrom);
         }
 
-        int BLOCK_SIZE = MATRIX_SIZE / (size - 1) + (MATRIX_SIZE % (size - 1) != 0); // rows of A to send
+        printf("\nGot final result! Matrix C: \n");
+        for (int i = 0; i < ROWS_A; i++) {
+            printf("\n"); 
+            for (int j = 0; j < COLUMNS_B; j++) 
+            // printf("%6.2f   ", c[i][j]);
+            printf("%d   ", c[i][j]);
+        }
+    } else {
+        printf("Waiting for meta in process %d\n", rank);
+        
+        MPI_Status statusMeta;
+        MPI_Probe(MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusMeta);
+        int metaData[2];
+        MPI_Recv(&metaData, METADATA_SIZE, MPI_INT, MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusMeta);
+        printf("received meta in process %d", rank);
 
-        int row = 0;
-        for (int receiver = 1; receiver < size; receiver++) {
-            int elemCount = std::min(BLOCK_SIZE, MATRIX_SIZE - ((receiver - 1) * BLOCK_SIZE));
-            while (row < row + elemCount) {
-                MPI_Send(&a[row][0], elemCount * MATRIX_SIZE, MPI_INT, receiver, tag_A + receiver, MPI_COMM_WORLD);
-                MPI_Send(&b[0][0], MATRIX_SIZE * MATRIX_SIZE, MPI_INT, receiver, tag_B + receiver, MPI_COMM_WORLD);
-                row++;
-            }
-       }
+        int rowsCount = metaData[1];
+        int startRow = metaData[0];
 
-        printf("\nGot result! Matrix C: \n");
-        print_matrix(c);
-    }
-    if (rank != sender) {
         MPI_Status statusA;
-        int countA;
-        MPI_Probe(sender, tag_A + rank, MPI_COMM_WORLD, &statusA);
-        MPI_Get_count(&statusA, MPI_INT, &countA);
-
+            MPI_Probe(MAIN_PROCESS, tag_A + rank, MPI_COMM_WORLD, &statusA);
         MPI_Status statusB;
-        int countB;
-        MPI_Probe(sender, tag_B + rank, MPI_COMM_WORLD, &statusB);
-        MPI_Get_count(&statusB, MPI_INT, &countB);
+            MPI_Probe(MAIN_PROCESS, tag_B + rank, MPI_COMM_WORLD, &statusB);
 
-        int rowsA = countA / MATRIX_SIZE;
-        int a[rowsA][MATRIX_SIZE];
-        int b[MATRIX_SIZE][MATRIX_SIZE];
-        MPI_Recv(&a[0][0], countA, MPI_INT, sender, statusA.MPI_TAG, MPI_COMM_WORLD, &statusA);
-        MPI_Recv(&b[0][0], countB, MPI_INT, sender, statusB.MPI_TAG, MPI_COMM_WORLD, &statusB);
+        MPI_Recv(&a, rowsCount * COLUMNS_A, MPI_INT, MAIN_PROCESS, statusA.MPI_TAG, MPI_COMM_WORLD, &statusA);
+        MPI_Recv(&b, COLUMNS_A * COLUMNS_B, MPI_INT, MAIN_PROCESS, statusB.MPI_TAG, MPI_COMM_WORLD, &statusB);
 
-        int c[rowsA][MATRIX_SIZE];
-        for (int i = 0; i < rowsA; i++) {
-            for (int j = 0; j < MATRIX_SIZE; j++) {
+        for (int i = 0; i < rowsCount; i++)
+            for (int j = 0; j < COLUMNS_B; j++) {
                 c[i][j] = 0;
-                for (int k = 0; k < MATRIX_SIZE; k++) {
+                for (int k = 0; k < COLUMNS_A; k++) {
                     c[i][j] += a[i][k] * b[k][j];
                 }
-            }
         }
 
-        MPI_Send(&c[0][0], countA, MPI_INT, sender, tag_A + rank, MPI_COMM_WORLD);
+        MPI_Send(&c[0][0], rowsCount * COLUMNS_B, MPI_INT, MAIN_PROCESS, tag_C + rank, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();

@@ -29,6 +29,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     
     int sender = 0;
+    
     if (rank == sender) {
         srand(time(nullptr));
         int n = MATRIX_SIZE * MATRIX_SIZE;
