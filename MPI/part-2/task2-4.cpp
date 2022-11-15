@@ -4,9 +4,9 @@
 #include <cmath>
 
 const int RAND_MAX_VALUE = 10;
-const int ROWS_A = 5;
-const int COLUMNS_A = 5;
-const int COLUMNS_B = 5;
+const int ROWS_A = 4;
+const int COLUMNS_A = 4;
+const int COLUMNS_B = 4;
 const int METADATA_SIZE = 2;
 
 using namespace std;
@@ -14,7 +14,7 @@ using namespace std;
 void print_matrix_A(int matrix[ROWS_A][COLUMNS_A]) {
    for (int i = 0; i < ROWS_A; i++) {
         for (int j = 0; j < COLUMNS_A; j++) {
-            printf("%d ", matrix[i][j]);
+            printf("%3d ", matrix[i][j]);
         }
         printf("\n");
     }
@@ -23,7 +23,7 @@ void print_matrix_A(int matrix[ROWS_A][COLUMNS_A]) {
 void print_matrix_B(int matrix[COLUMNS_A][COLUMNS_B]) {
    for (int i = 0; i < COLUMNS_A; i++) {
         for (int j = 0; j < COLUMNS_B; j++) {
-            printf("%d ", matrix[i][j]);
+            printf("%3d ", matrix[i][j]);
         }
         printf("\n");
     }
@@ -32,20 +32,20 @@ void print_matrix_B(int matrix[COLUMNS_A][COLUMNS_B]) {
 
 int main(int argc, char *argv[]) {
     int rank, size;
-    int tag_META = 550;
-    int tag_A = 100;
+    int tag_META = 50;
+    int tag_A = 200;
     int tag_B = 300;
     int tag_C = 400;
-    
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        
     int a[ROWS_A][COLUMNS_A];
     int b[COLUMNS_A][COLUMNS_B];
     int c[ROWS_A][COLUMNS_B];
 
     int MAIN_PROCESS = 0;
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (rank == MAIN_PROCESS) {
         srand(time(nullptr));
@@ -72,54 +72,46 @@ int main(int argc, char *argv[]) {
         int rows_block = ROWS_A / workers + (ROWS_A % workers != 0);
 
         for (int dest = 1; dest < size; dest++) {
+            MPI_Send(&(b[0][0]), COLUMNS_A * COLUMNS_B, MPI_INT, dest, tag_B + dest, MPI_COMM_WORLD);
+
             int startRow = (dest - 1) * rows_block;
             int rowsCount = std::min(rows_block, ROWS_A - ((dest - 1) * rows_block));
             int data[METADATA_SIZE] = {startRow, rowsCount};
             
-            printf("Sending %d rows to process №%d, offset = %d\n", rowsCount, dest, startRow);
-            MPI_Send(&data, METADATA_SIZE, MPI_INT, dest, tag_META + dest, MPI_COMM_WORLD);
+            // printf("Sending %d rows to process №%d, offset = %d\n", rowsCount, dest, startRow);
             MPI_Send(&(a[startRow][0]), rowsCount * COLUMNS_A, MPI_INT, dest, tag_A + dest, MPI_COMM_WORLD);
-            MPI_Send(&b, COLUMNS_A * COLUMNS_B, MPI_INT, dest, tag_B + dest, MPI_COMM_WORLD);
         }
 
         printf("Sent all data, waiting for results~ \n");
         for (int from = 1; from < size; from++) {
-            MPI_Status statusFrom;
-            MPI_Probe(MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusFrom);
-   
-            int startRow = (statusFrom.MPI_SOURCE - 1) * rows_block;
-            int rowsCount = std::min(rows_block, ROWS_A - ((statusFrom.MPI_SOURCE - 1) * rows_block));
-            printf("  Received %d rows from process №%d, offset = %d\n", rowsCount, statusFrom.MPI_SOURCE, startRow);
+            
+            int startRow = (from - 1) * rows_block;
+            int rowsCount = std::min(rows_block, ROWS_A - ((from - 1) * rows_block));
+            // printf("  Received %d rows from process №%d, offset = %d\n", rowsCount, from, startRow);
 
-            MPI_Recv(&(c[startRow][0]), rowsCount * COLUMNS_B, MPI_INT, statusFrom.MPI_SOURCE, statusFrom.MPI_TAG, MPI_COMM_WORLD, &statusFrom);
+            MPI_Recv(&(c[startRow][0]), rowsCount * COLUMNS_B, MPI_INT,from, tag_C + from, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
 
-        printf("\nGot final result! Matrix C: \n");
+        printf("\nGot final result ! Matrix C: \n");
         for (int i = 0; i < ROWS_A; i++) {
             printf("\n"); 
             for (int j = 0; j < COLUMNS_B; j++) 
             // printf("%6.2f   ", c[i][j]);
-            printf("%d   ", c[i][j]);
+            printf("%3d   ", c[i][j]);
         }
+        printf("\n");
     } else {
-        printf("Waiting for meta in process %d\n", rank);
-        
-        MPI_Status statusMeta;
-        MPI_Probe(MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusMeta);
-        int metaData[2];
-        MPI_Recv(&metaData, METADATA_SIZE, MPI_INT, MAIN_PROCESS, MPI_ANY_TAG, MPI_COMM_WORLD, &statusMeta);
-        printf("received meta in process %d", rank);
+        MPI_Recv(&b, COLUMNS_A * COLUMNS_B, MPI_INT, MAIN_PROCESS, tag_B + rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // printf(" received B in process %d\n", rank);
 
-        int rowsCount = metaData[1];
-        int startRow = metaData[0];
+        MPI_Status status;
+        MPI_Probe(MAIN_PROCESS, tag_A + rank, MPI_COMM_WORLD, &status);
+        int count;
+        MPI_Get_count(&status, MPI_INT, &count);
+        int rowsCount = count / COLUMNS_A;
 
-        MPI_Status statusA;
-            MPI_Probe(MAIN_PROCESS, tag_A + rank, MPI_COMM_WORLD, &statusA);
-        MPI_Status statusB;
-            MPI_Probe(MAIN_PROCESS, tag_B + rank, MPI_COMM_WORLD, &statusB);
-
-        MPI_Recv(&a, rowsCount * COLUMNS_A, MPI_INT, MAIN_PROCESS, statusA.MPI_TAG, MPI_COMM_WORLD, &statusA);
-        MPI_Recv(&b, COLUMNS_A * COLUMNS_B, MPI_INT, MAIN_PROCESS, statusB.MPI_TAG, MPI_COMM_WORLD, &statusB);
+        MPI_Recv(&a, rowsCount * COLUMNS_A, MPI_INT, MAIN_PROCESS, tag_A + rank, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // printf(" received A in process %d\n", rank);
 
         for (int i = 0; i < rowsCount; i++)
             for (int j = 0; j < COLUMNS_B; j++) {
@@ -130,6 +122,8 @@ int main(int argc, char *argv[]) {
         }
 
         MPI_Send(&c[0][0], rowsCount * COLUMNS_B, MPI_INT, MAIN_PROCESS, tag_C + rank, MPI_COMM_WORLD);
+                // printf(" sent result from process %d\n", rank);
+
     }
 
     MPI_Finalize();
