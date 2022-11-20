@@ -3,11 +3,14 @@
 #include <vector>
 #include <cmath>
 
+#include <chrono>
+#include <thread>
+
 const int RAND_MAX_VALUE = 100;
-const int ROWS_A = 4 ;
-const int COLUMNS_A = 4;
-const int ROWS_C = 4;
-const int COLUMNS_C = 4;
+const int ROWS_A = 8;
+const int COLUMNS_A = 6;
+const int ROWS_C = 6;
+const int COLUMNS_C = 8;
 
 using namespace std;
 
@@ -47,7 +50,8 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     
     int a[ROWS_A][COLUMNS_A];       // initial matrix
-    int c[ROWS_C][COLUMNS_C];       // transponed matrix
+    int c[COLUMNS_A][ROWS_A];       // transponed matrix
+    int tag_from = 100;
 
     int MAIN_PROCESS = 0;
 
@@ -77,9 +81,51 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    MPI_Gather(&c1, rows * COLUMNS_A, MPI_INT, &c, rows * COLUMNS_A, MPI_INT, MAIN_PROCESS, MPI_COMM_WORLD);
+    // printf("\x1B[36m Calculated on %d process: \n", rank);
+    // for (int i = 0; i < COLUMNS_A; i++) {
+    //     for (int j = 0; j < rows; j++) {
+    //         printf("%3d ", c1[i][j]);
+    //     }
+    //     printf("\n");
+    // }
+    // printf("\033[0m");
+    
+    MPI_Send(&c1,  rows * COLUMNS_A, MPI_INT, 0, tag_from + rank, MPI_COMM_WORLD);
 
     if (rank == 0) {
+
+        for(int k = 0; k < size; k++) {
+            MPI_Status status;
+            MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            int count;
+            MPI_Get_count(&status, MPI_INT, &count);
+            
+            int receivedCols = count / COLUMNS_A;
+            int startColumn = status.MPI_SOURCE * rows;
+
+            int recieved[COLUMNS_A][receivedCols];
+            MPI_Recv(&recieved, count, MPI_INT,status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+            
+            // printf("\x1B[33m  Got message from %d process, contains %d elements: \n", status.MPI_SOURCE, count);
+            // printf("  Gotta insert in C: from %d column \n", startColumn);
+            // for (int i = 0; i < COLUMNS_A; i++) {
+            //     for (int j = 0; j < receivedCols; j++) {
+            //         printf("%3d ", recieved[i][j]);
+            //     }
+            //     printf("\n");
+            // }
+            // printf("\033[0m");
+
+            int p = 0;
+            for (int i = 0; i < COLUMNS_A; i++) {
+                for (int j = startColumn; j < startColumn + rows; j++) {
+                    c[i][j] = recieved[i][p++];
+                }
+                p = 0;
+            }
+        }
+
+
         printf("Transposed matrix! Result: \n");
 
         for (int i = 0; i < ROWS_C; i++) {
@@ -89,6 +135,8 @@ int main(int argc, char *argv[]) {
             printf("\n");
         }
         printf("\n");
+    } else {
+        // std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
 
     MPI_Finalize();
