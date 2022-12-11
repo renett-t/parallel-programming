@@ -8,7 +8,8 @@
             "program": "/usr/bin/mpirun",
             "args": [
                 "-np",
-                "4",
+                "10",
+                "--oversubscribe",
                 "${workspaceFolder}/output/${relativeFileDirname}/${fileBasenameNoExtension}.out",
             ],
             "stopAtEntry": true,

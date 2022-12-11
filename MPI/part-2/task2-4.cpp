@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 
             int startRow = (dest - 1) * rows_block;
             int rowsCount = std::min(rows_block, ROWS_A - ((dest - 1) * rows_block));
-            int data[METADATA_SIZE] = {startRow, rowsCount};
+            // int data[METADATA_SIZE] = {startRow, rowsCount};
             
             // printf("Sending %d rows to process №%d, offset = %d\n", rowsCount, dest, startRow);
             MPI_Send(&(a[startRow][0]), rowsCount * COLUMNS_A, MPI_INT, dest, tag_A + dest, MPI_COMM_WORLD);
@@ -123,7 +123,6 @@ int main(int argc, char *argv[]) {
 
         MPI_Send(&c[0][0], rowsCount * COLUMNS_B, MPI_INT, MAIN_PROCESS, tag_C + rank, MPI_COMM_WORLD);
                 // printf(" sent result from process %d\n", rank);
-
     }
 
     MPI_Finalize();

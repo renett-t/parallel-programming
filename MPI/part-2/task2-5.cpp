@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
             int startColumn = status.MPI_SOURCE * rows;
 
             int recieved[COLUMNS_A][receivedCols];
-            MPI_Recv(&recieved, count, MPI_INT,status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+            MPI_Recv(&recieved, count, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
             
             // printf("\x1B[33m  Got message from %d process, contains %d elements: \n", status.MPI_SOURCE, count);
             // printf("  Gotta insert in C: from %d column \n", startColumn);
